@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatz — Real-time 1-on-1 Chat</title>
+  <!-- Socket.io CDN for real-time messaging -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    /* --- RESET & VARIABLES --- */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    :root {
+      --bg-color: #f0f2f5;
+      --card-bg: #ffffff;
+      --primary: #007aff;
+      --primary-hover: #0056b3;
+      --text-main: #1c1e21;
+      --text-muted: #65676b;
+      --bubble-me: #007aff;
+      --text-me: #ffffff;
+      --bubble-other: #e4e6eb;
+      --text-other: #050505;
+      --border-color: #e5e5ea;
+      --status-online: #34c759;
+      --status-waiting: #ff9500;
+      --status-offline: #ff3b30;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    /* --- APP CONTAINER --- */
+    #app {
+      width: 100%;
+      max-width: 480px;
+      height: 100vh;
+      max-height: 850px;
+      background: var(--card-bg);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    @media (min-width: 500px) {
+      #app {
+        height: 90vh;
+        border-radius: 16px;
+      }
+    }
+
+    /* --- SCREEN 1: LANDING / LOGIN --- */
+    .screen {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    #landing-screen {
+      justify-content: center;
+      align-items: center;
+      padding: 32px;
+      text-align: center;
+    }
+
+    .brand-title {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--primary);
+      margin-bottom: 8px;
+    }
+
+    .brand-subtitle {
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      font-size: 0.95rem;
+    }
+
+    .input-group {
+      width: 100%;
+      margin-bottom: 16px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .btn:hover {
+      background-color: var(--primary-hover);
+    }
+
+    /* --- SCREEN 2: CHAT INTERFACE --- */
+    /* Header */
+    .chat-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #ffffff;
+      z-index: 10;
+    }
+
+    .user-info h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--status-waiting);
+    }
+
+    .btn-leave {
+      background: transparent;
+      border: none;
+      color: var(--status-offline);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    /* System Banner / Errors */
+    #system-banner {
+      background-color: #fff3cd;
+      color: #856404;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      text-align: center;
+      border-bottom: 1px solid #ffeeba;
+      display: none;
+    }
+
+    #system-banner.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border-bottom-color: #f5c6cb;
+    }
+
+    /* Messages Area */
+    .messages-container {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background-color: #fafafa;
+    }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      max-width: 75%;
+    }
+
+    .message.me {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .message.other {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .message .sender {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      padding: 0 4px;
+    }
+
+    .message .bubble {
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .message.me .bubble {
+      background-color: var(--bubble-me);
+      color: var(--text-me);
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.other .bubble {
+      background-color: var(--bubble-other);
+      color: var(--text-other);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message .time {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+
+    /* System Messages inside Chat */
+    .system-msg {
+      align-self: center;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      background: #e9ecef;
+      padding: 4px 12px;
+      border-radius: 12px;
+      margin: 8px 0;
+    }
+
+    /* Input Footer */
+    .chat-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 8px;
+      background: #ffffff;
+    }
+
+    .chat-footer input {
+      flex: 1;
+    }
+
+    .chat-footer button {
+      width: auto;
+      padding: 0 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app">
+    <!-- LANDING SCREEN -->
+    <div id="landing-screen" class="screen active">
+      <h1 class="brand-title">Chatz</h1>
+      <p class="brand-subtitle">Instant, private 1-on-1 conversations</p>
+      
+      <form id="login-form" style="width: 100%;">
+        <div class="input-group">
+          <input type="text" id="username-input" placeholder="Enter your display name" required maxlength="20" />
+        </div>
+        <button type="submit" class="btn">Start Chatting</button>
+      </form>
+    </div>
+
+    <!-- CHAT SCREEN -->
+    <div id="chat-screen" class="screen">
+      <!-- Header -->
+      <div class="chat-header">
+        <div class="user-info">
+          <h3 id="display-user-name">User</h3>
+          <div class="status-badge">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+          </div>
+        </div>
+        <button class="btn-leave" id="leave-btn">Leave</button>
+      </div>
+
+      <!-- Banner for connection state or errors -->
+      <div id="system-banner">Connecting to service...</div>
+
+      <!-- Messages Area -->
+      <div class="messages-container" id="messages-container"></div>
+
+      <!-- Footer Input -->
+      <form id="chat-form" class="chat-footer">
+        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
+        <button type="submit" class="btn">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // --- STATE & DOM ELEMENTS ---
+    const STORAGE_KEY = 'chatz_session';
+    let socket = null;
+    let currentUser = null;
+
+    const landingScreen = document.getElementById('landing-screen');
+    const chatScreen = document.getElementById('chat-screen');
+    const loginForm = document.getElementById('login-form');
+    const usernameInput = document.getElementById('username-input');
+    const displayUserName = document.getElementById('display-user-name');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const systemBanner = document.getElementById('system-banner');
+    const messagesContainer = document.getElementById('messages-container');
+    const chatForm = document.getElementById('chat-form');
+    const messageInput = document.getElementById('message-input');
+    const leaveBtn = document.getElementById('leave-btn');
+
+    // --- INITIALIZATION & SESSION PERSISTENCE ---
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedSession = localStorage.getItem(STORAGE_KEY);
+      if (savedSession) {
+        try {
+          currentUser = JSON.parse(savedSession);
+          showChatScreen();
+          initSocketConnection();
+        } catch (e) {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+    });
+
+    // Handle Login
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = usernameInput.value.trim();
+      if (!name) return;
+
+      currentUser = {
+        name: name,
+        id: 'user_' + Math.random().toString(36).substr(2, 9),
+        // We use a shared room ID for simple pairing, or unique per session
+        roomId: 'chatz_global_room' 
+      };
+
+      // Persist session
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser));
+      
+      showChatScreen();
+      initSocketConnection();
+    });
+
+    // Handle Leave/Logout
+    leaveBtn.addEventListener('click', () => {
+      localStorage.removeItem(STORAGE_KEY);
+      if (socket) socket.disconnect();
+      messagesContainer.innerHTML = '';
+      showLandingScreen();
+    });
+
+    function showChatScreen() {
+      landingScreen.classList.remove('active');
+      chatScreen.classList.add('active');
+      displayUserName.textContent = currentUser.name;
+    }
+
+    function showLandingScreen() {
+      chatScreen.classList.remove('active');
+      landingScreen.classList.add('active');
+      usernameInput.value = '';
+    }
+
+    // --- WEBSOCKET REAL-TIME LOGIC ---
+    function initSocketConnection() {
+      updateStatus('connecting', 'Connecting...');
+      showBanner('Connecting to chat server...');
+
+      // Connect to a public test WebSocket server
+      socket = io('https://pie-host.com', {
+        transports: ['websocket'],
+        reconnectionAttempts: 5
+      });
+
+      socket.on('connect', () => {
+        updateStatus('online', 'Connected & Active');
+        hideBanner();
+        
+        // Join room logic
+        socket.emit('subscribe', { channel: currentUser.roomId });
+        
+        appendSystemMessage('You joined the chat.');
+      });
+
+      socket.on('connect_error', (err) => {
+        updateStatus('offline', 'Disconnected');
+        showBanner('Connection failed. Retrying...', true);
+      });
+
+      socket.on('disconnect', () => {
+        updateStatus('offline', 'Disconnected');
+        showBanner('Lost connection to server.', true);
+      });
+
+      // Receive incoming message broadcast
+      socket.on('message', (data) => {
+        if (!data || !data.senderId) return;
+        
+        // Ignore messages sent by self (already rendered optimistically)
+        if (data.senderId === currentUser.id) return;
+
+        appendMessage({
+          senderName: data.senderName,
+          text: data.text,
+          timestamp: data.timestamp,
+          isMe: false
+        });
+      });
+    }
+
+    // Send Message
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = messageInput.value.trim();
+      if (!text || !socket || !socket.connected) return;
+
+      const messagePayload = {
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        text: text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      // 1. Render immediately on self UI (Optimistic UI)
+      appendMessage({
+        senderName: 'You',
+        text: text,
+        timestamp: messagePayload.timestamp,
+        isMe: true
+      });
+
+      // 2. Broadcast via WebSocket
+      socket.emit('send', {
+        channel: currentUser.roomId,
+        message: messagePayload
+      });
+
+      messageInput.value = '';
+    });
+
+    // --- UI HELPERS ---
+    function appendMessage({ senderName, text, timestamp, isMe }) {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${isMe ? 'me' : 'other'}`;
+
+      msgDiv.innerHTML = `
+        <span class="sender">${escapeHTML(senderName)}</span>
+        <div class="bubble">${escapeHTML(text)}</div>
+        <span class="time">${timestamp}</span>
+      `;
+
+      messagesContainer.appendChild(msgDiv);
+      scrollToBottom();
+    }
+
+    function appendSystemMessage(text) {
+      const sysDiv = document.createElement('div');
+      sysDiv.className = 'system-msg';
+      sysDiv.textContent = text;
+      messagesContainer.appendChild(sysDiv);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function updateStatus(state, label) {
+      statusText.textContent = label;
+      if (state === 'online') {
+        statusDot.style.backgroundColor = 'var(--status-online)';
+      } else if (state === 'connecting') {
+        statusDot.style.backgroundColor = 'var(--status-waiting)';
+      } else {
+        statusDot.style.backgroundColor = 'var(--status-offline)';
+      }
+    }
+
+    function showBanner(msg, isError = false) {
+      systemBanner.textContent = msg;
+      systemBanner.style.display = 'block';
+      systemBanner.className = isError ? 'error' : '';
+    }
+
+    function hideBanner() {
+      systemBanner.style.display = 'none';
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+  </script>
+</body>
+</html>
